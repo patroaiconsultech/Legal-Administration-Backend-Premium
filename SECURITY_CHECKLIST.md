@@ -1,0 +1,26 @@
+# Security / Go-live checklist
+
+- [ ] ENVIRONMENT=production
+- [ ] PostgreSQL real
+- [ ] migrations `alembic upgrade head` PASS
+- [ ] S3 privado com SSE-S3 (AES256) ou KMS
+- [ ] nenhum bucket público
+- [ ] SECRET_KEY forte
+- [ ] COOKIE_SECURE=true
+- [ ] HTTPS
+- [ ] FRONTEND_ORIGIN exato
+- [ ] RESEND_API_KEY configurada somente no Railway
+- [ ] sender Resend verificado
+- [ ] ADMIN_PASSWORD_HASH forte
+- [ ] admin OTP recebido
+- [ ] convite encaminhado não autentica terceiro
+- [ ] OTP brute force bloqueado
+- [ ] termo/aceite/hash associados
+- [ ] recibo PDF gerado e recuperável
+- [ ] URL direta de conteúdo sem sessão retorna 401/403
+- [ ] revogação mata sessões
+- [ ] noindex/noarchive
+- [ ] Hyper Agente juridicamente aprovado antes de AGENT_ENABLED=true
+- [ ] OPENAI_API_KEY apenas no backend, se agente ativado
+- [ ] teste de prompt injection no agente
+- [ ] teste de pergunta sobre preço/prazo/TRF4 sem evidência
