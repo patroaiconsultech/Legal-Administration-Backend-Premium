@@ -112,6 +112,48 @@ def observed_ip(request: Request) -> str | None:
     # promote an edge-provided address into a separate canonical field.
     return request.client.host if request.client else None
 
+
+async def notify_admin_access_request(
+    db: Session, request: Request, *, project_id: str, request_id: str,
+    full_name: str, organization_name: str,
+) -> str:
+    """Send and audit the admin notification without hiding delivery failures."""
+    try:
+        result = await send_email(
+            settings.admin_email,
+            "Nova solicitação de acesso — Efatá",
+            f"<p>Uma nova solicitação de acesso ao briefing confidencial aguarda sua revisão.</p>"
+            f"<p><b>Nome:</b> {html.escape(full_name)}<br>"
+            f"<b>Organização:</b> {html.escape(organization_name)}</p>"
+            f"<p>Abra o painel administrativo da Efatá para aprovar ou rejeitar.</p>"
+        )
+    except Exception as exc:
+        db.rollback()
+        log_event(
+            db, request, "ACCESS_REQUEST_EMAIL_FAILED", project_id=project_id,
+            metadata={
+                "access_request_id": request_id,
+                "recipient": settings.admin_email,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc)[:240],
+            },
+        )
+        db.commit()
+        return "failed"
+
+    provider_id = result.get("id") if isinstance(result, dict) else None
+    log_event(
+        db, request, "ACCESS_REQUEST_EMAIL_SENT", project_id=project_id,
+        metadata={
+            "access_request_id": request_id,
+            "recipient": settings.admin_email,
+            "provider_message_id": provider_id,
+        },
+    )
+    db.commit()
+    return "sent"
+
+
 @app.get("/health")
 def health():
     return {"status":"ok","service":"efata-secure-briefing"}
@@ -147,8 +189,15 @@ async def create_access_request(payload: AccessRequestCreate, request: Request, 
         ).order_by(desc(AccessRequest.requested_at))
     )
     if existing:
-        # Uniform response: do not disclose any additional account state.
-        return {"status": "PENDING_ADMIN_APPROVAL", "request_id": existing.id}
+        email_notification = await notify_admin_access_request(
+            db, request, project_id=project.id, request_id=existing.id,
+            full_name=existing.full_name, organization_name=existing.organization_name,
+        )
+        return {
+            "status": "PENDING_ADMIN_APPROVAL",
+            "request_id": existing.id,
+            "email_notification": email_notification,
+        }
 
     row = AccessRequest(
         project_id=project.id,
@@ -182,19 +231,15 @@ async def create_access_request(payload: AccessRequestCreate, request: Request, 
     except Exception:
         db.rollback()
 
-    try:
-        await send_email(
-            settings.admin_email,
-            "Nova solicitação de acesso — Efatá",
-            f"<p>Uma nova solicitação de acesso ao briefing confidencial aguarda sua revisão.</p>"
-            f"<p><b>Nome:</b> {html.escape(row.full_name)}<br>"
-            f"<b>Organização:</b> {html.escape(row.organization_name)}</p>"
-            f"<p>Abra o painel administrativo da Efatá para aprovar ou rejeitar.</p>"
-        )
-    except Exception:
-        pass
-
-    return {"status": "PENDING_ADMIN_APPROVAL", "request_id": row.id}
+    email_notification = await notify_admin_access_request(
+        db, request, project_id=project.id, request_id=row.id,
+        full_name=row.full_name, organization_name=row.organization_name,
+    )
+    return {
+        "status": "PENDING_ADMIN_APPROVAL",
+        "request_id": row.id,
+        "email_notification": email_notification,
+    }
 
 
 @app.post("/api/access/consume")
