@@ -554,8 +554,8 @@ def admin_verify(payload: AdminVerifyRequest, response: Response, db: Session = 
     sess=AdminSession(admin_email=payload.email.lower(), session_token_hash=sha256_text(raw), expires_at=expires(hours=4))
     db.add(sess); db.commit()
     csrf=random_token(24)
-    response.set_cookie("efata_admin_session",raw,httponly=True,secure=settings.cookie_secure,samesite="strict",max_age=14400,path="/")
-    response.set_cookie("efata_admin_csrf",csrf,httponly=False,secure=settings.cookie_secure,samesite="strict",max_age=14400,path="/")
+    response.set_cookie("efata_admin_session",raw,httponly=True,secure=settings.cookie_secure,samesite="none",max_age=14400,path="/")
+    response.set_cookie("efata_admin_csrf",csrf,httponly=False,secure=settings.cookie_secure,samesite="none",max_age=14400,path="/")
     return {"ok":True,"csrf":csrf}
 
 def admin_auth(db, raw):
