@@ -121,11 +121,11 @@ async def notify_admin_access_request(
     try:
         result = await send_email(
             settings.admin_email,
-            "Nova solicitação de acesso — Efatá",
+            "Nova solicitação de acesso — Estevez Guarda",
             f"<p>Uma nova solicitação de acesso ao briefing confidencial aguarda sua revisão.</p>"
             f"<p><b>Nome:</b> {html.escape(full_name)}<br>"
             f"<b>Organização:</b> {html.escape(organization_name)}</p>"
-            f"<p>Abra o painel administrativo da Efatá para aprovar ou rejeitar.</p>"
+            f"<p>Abra o painel administrativo da Estevez Guarda para aprovar ou rejeitar.</p>"
         )
     except Exception as exc:
         db.rollback()
@@ -156,7 +156,7 @@ async def notify_admin_access_request(
 
 @app.get("/health")
 def health():
-    return {"status":"ok","service":"efata-secure-briefing"}
+    return {"status":"ok","service":"estevez-guarda-mvp"}
 
 
 @app.post("/api/access-requests")
@@ -223,7 +223,7 @@ async def create_access_request(payload: AccessRequestCreate, request: Request, 
     try:
         push_summary = send_admin_push(
             db,
-            title="Nova solicitação de acesso — Efatá",
+            title="Nova solicitação de acesso — Estevez Guarda",
             body="Há uma nova solicitação aguardando sua revisão.",
             url=f"/admin?request={row.id}",
         )
@@ -456,7 +456,7 @@ def content(request: Request, db: Session = Depends(db_session), efata_secure_se
     s, inv, acc, term = require_authorized(db, efata_secure_session)
     key_prefix = "projects/estevez-guarda/presentation/"
     # seeded version is deterministic in this package
-    key = key_prefix + "2026-09-16.3.json"
+    key = key_prefix + "2026-09-18.mvp1.json"
     data, _ = storage.get(key)
     payload = json.loads(data)
     payload["viewer"] = {

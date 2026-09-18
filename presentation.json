@@ -1,289 +1,176 @@
 {
   "project_slug": "estevez-guarda",
-  "version": "2026-09-16.3",
-  "classification": "CONFIDENTIAL",
-  "brand": "Efatá",
-  "corporate": "PatroAI Consultech Ltda.",
-  "title": "Atualização Executiva — Efatá × Estevez Guarda × eproc / TRF4",
-  "subtitle": "Status do projeto, arquitetura de integração e visão premium dos agentes da Efatá — com separação explícita entre capacidades atuais, catálogo organizacional e itens ainda em validação.",
-  "updated_at": "16 de setembro de 2026",
+  "version": "2026-09-18.mvp1",
+  "classification": "DEMONSTRAÇÃO",
+  "brand": "Estevez Guarda",
+  "corporate": "Estevez Guarda Administração Judicial",
+  "title": "ESTEVEZ GUARDA — Centro de Inteligência da Administração Judicial",
+  "subtitle": "Inteligência para uma Administração Judicial cada vez mais eficiente.",
+  "updated_at": "18 de setembro de 2026",
   "hero_asset": "hero",
+  "demo_portfolio": {
+    "eyebrow": "MVP FUNCIONAL • DADOS PÚBLICOS",
+    "title": "Centro de Inteligência da Administração Judicial",
+    "subtitle": "Uma visão operacional demonstrativa com processos públicos, documentos, marcos e Assistente Estevez.",
+    "source_note": "Dados demonstrativos extraídos de páginas públicas da Estevez Guarda em 18/09/2026. O MVP não representa integração live com eproc.",
+    "operations": [
+      {
+        "id": "construmil",
+        "name": "Grupo Construmil",
+        "type": "Recuperação Judicial",
+        "status": "PRJ aprovado em AGC",
+        "process": "5019267-71.2025.8.21.0021",
+        "court": "Juizado Regional Empresarial da Comarca de Passo Fundo/RS",
+        "responsible": "Lucas Petter Bonetti",
+        "public_page": "https://www.estevezguarda.com.br/processo?c=210",
+        "highlights": [
+          "Pedido em 06/06/2025",
+          "Processamento deferido em 14/07/2025",
+          "PRJ apresentado em 11/09/2025",
+          "PRJ aprovado em AGC em 08/07/2026"
+        ],
+        "documents": [
+          {
+            "title": "Plano de Recuperação Judicial",
+            "kind": "Recuperação Judicial",
+            "date": "11/09/2025",
+            "url": "https://www.estevezguarda.com.br/admin/download.php?file=files%2Fprocesso_documento%2Fprocesso_documento10292012092025_1_.pdf"
+          },
+          {
+            "title": "Relatório de Verificação de Créditos",
+            "kind": "Recuperação Judicial",
+            "date": "01/10/2025",
+            "url": "https://www.estevezguarda.com.br/admin/download.php?file=files%2Fprocesso_documento%2Fprocesso_documento16035006102025_1_.pdf"
+          },
+          {
+            "title": "Relatório Mensal de Atividades - Maio 2026",
+            "kind": "Relatório de Atividades",
+            "date": "2026",
+            "url": "https://www.estevezguarda.com.br/admin/download.php?file=files%2Fprocesso_documento%2Fprocesso_documento15585517072026_1_.pdf"
+          }
+        ]
+      },
+      {
+        "id": "schoffen",
+        "name": "Móveis Schoffen Ltda.",
+        "type": "Recuperação Judicial",
+        "status": "AGC em acompanhamento",
+        "process": "0012971-25.2025.8.16.0194",
+        "court": "26ª Vara de Falências e Recuperação Judicial de Curitiba/PR",
+        "responsible": "Lucas Petter Bonetti",
+        "public_page": "https://www.estevezguarda.com.br/processo?c=216",
+        "highlights": [
+          "Pedido em 30/07/2025",
+          "Processamento deferido em 27/08/2025",
+          "PRJ apresentado em 27/10/2025",
+          "2ª convocação da AGC com continuações em 2026"
+        ],
+        "documents": [
+          {
+            "title": "Plano de Recuperação Judicial",
+            "kind": "Recuperação Judicial",
+            "date": "27/10/2025",
+            "url": "https://www.estevezguarda.com.br/admin/download.php?file=files%2Fprocesso_documento%2Fprocesso_documento17021223032026_1_.pdf"
+          },
+          {
+            "title": "RMA - Abril de 2026",
+            "kind": "Relatório de Atividades",
+            "date": "04/2026",
+            "url": "https://www.estevezguarda.com.br/admin/download.php?file=files%2Fprocesso_documento%2Fprocesso_documento14565617072026_1_.pdf"
+          }
+        ]
+      },
+      {
+        "id": "sd-transportes",
+        "name": "S&D Transportes Ltda.",
+        "type": "Falência",
+        "status": "Falência decretada",
+        "process": "5001988-94.2025.8.24.0019",
+        "court": "Vara Regional de Recuperações Judiciais e Falências de Concórdia/SC",
+        "responsible": "Milena Emmendoerfer",
+        "public_page": "https://www.estevezguarda.com.br/processo?c=206",
+        "highlights": [
+          "Pedido de recuperação em 2025",
+          "Processamento deferido em maio de 2025",
+          "Falência decretada em 17/05/2026",
+          "Edital do art. 7º, §1º em 02/06/2026"
+        ],
+        "documents": [
+          {
+            "title": "Sentença de Decretação da Falência",
+            "kind": "Falência",
+            "date": "17/05/2026",
+            "url": "https://www.estevezguarda.com.br/admin/download.php?file=files%2Fprocesso_documento%2Fprocesso_documento17522220052026_1_.pdf"
+          },
+          {
+            "title": "Relatório Mensal de Atividades - Fevereiro 2026",
+            "kind": "Relatório de Atividades",
+            "date": "02/2026",
+            "url": "https://www.estevezguarda.com.br/admin/download.php?file=files%2Fprocesso_documento%2Fprocesso_documento13483112052026_1_.pdf"
+          }
+        ]
+      }
+    ]
+  },
   "sections": [
     {
       "type": "status",
-      "eyebrow": "STATUS EXECUTIVO",
-      "title": "O projeto avança. A integração espera a fonte oficial.",
-      "body": "Não há bloqueio de produto. Há uma dependência técnica específica: precisamos das informações oficiais do TRF4 para transformar a camada preparada em uma integração eproc homologável.",
+      "eyebrow": "MVP FUNCIONAL",
+      "title": "Do site público para uma visão operacional inteligente",
+      "body": "Este MVP organiza operações, documentos e marcos processuais em um painel executivo e disponibiliza um Assistente Estevez para consultar o material autorizado.",
       "cards": [
         {
-          "label": "EFATÁ",
-          "value": "DESENVOLVIMENTO ATIVO",
+          "label": "OPERAÇÕES DEMO",
+          "value": "3 PROCESSOS",
           "tone": "good",
-          "text": "Inteligência, governança e agentes em evolução."
+          "text": "Duas recuperações judiciais e uma falência, usando referências públicas da Estevez Guarda."
         },
         {
-          "label": "VERTICAL LEGAL",
-          "value": "BASELINE V0.2",
+          "label": "DOCUMENTOS",
+          "value": "7 REFERÊNCIAS",
           "tone": "good",
-          "text": "Fundação independente endurecida."
+          "text": "Planos, relatórios, verificação de créditos e sentença, com acesso à fonte pública."
+        },
+        {
+          "label": "ASSISTENTE ESTEVEZ",
+          "value": "PRONTO PARA ATIVAR",
+          "tone": "warn",
+          "text": "O chat já está integrado ao backend; basta habilitar o provider no Railway."
         },
         {
           "label": "EPROC / TRF4",
-          "value": "DEPENDÊNCIA EXTERNA",
+          "value": "AGUARDANDO FONTE OFICIAL",
           "tone": "external",
-          "text": "Aguardando orientação técnica oficial."
-        },
-        {
-          "label": "MVP",
-          "value": "EM EVOLUÇÃO",
-          "tone": "warn",
-          "text": "Construção segue em paralelo."
+          "text": "Sem simular integração live. O MVP usa somente material público e autorizado."
         }
-      ]
-    },
-    {
-      "type": "split",
-      "eyebrow": "SITUAÇÃO OBJETIVA",
-      "title": "Sem improvisar contrato técnico de produção",
-      "body": "Até o momento, não há documentação técnica oficial suficiente para fixar com segurança endpoint, autenticação, credenciais, requisitos de rede, formato documental e rito de homologação do eproc.",
-      "quote": "Avançamos em tudo que independe do Tribunal e conectamos somente quando os parâmetros oficiais forem recebidos.",
-      "asset": "waiting"
-    },
-    {
-      "type": "listgrid",
-      "eyebrow": "DEPENDÊNCIA TÉCNICA",
-      "title": "O que precisamos receber do TRF4",
-      "body": "Assim que essas definições forem oficiais, o trabalho passa de preparação arquitetural para homologação real.",
-      "groups": [
-        {
-          "title": "Ambiente e contrato",
-          "items": [
-            "Endpoint/WSDL de homologação",
-            "Versão e contrato aplicável",
-            "Operações liberadas",
-            "Massa ou processo de homologação"
-          ]
-        },
-        {
-          "title": "Identidade e autenticação",
-          "items": [
-            "Credenciais técnicas",
-            "Perfil de acesso institucional",
-            "Credencial de serviço, se aplicável",
-            "Política de rotação/expiração"
-          ]
-        },
-        {
-          "title": "Segurança e rede",
-          "items": [
-            "IP, TLS, certificado ou VPN",
-            "Rate limits",
-            "Restrições por ambiente",
-            "Requisitos de auditoria"
-          ]
-        },
-        {
-          "title": "Documentos e produção",
-          "items": [
-            "Formato documental",
-            "Base64 / MTOM / XOP se aplicável",
-            "Critérios de aceite",
-            "Passagem para produção"
-          ]
-        }
-      ]
-    },
-    {
-      "type": "architecture",
-      "eyebrow": "ARQUITETURA PREPARADA",
-      "title": "eproc entra como fonte oficial, não como atalho",
-      "body": "A Vertical Legal preserva domínio e dados próprios. A Efatá permanece como plano de inteligência e governança. A conexão judicial entra por adapter dedicado, versionado e auditável.",
-      "asset": "architecture",
-      "rules": [
-        "Credenciais apenas no backend",
-        "Sem acesso direto entre bancos",
-        "Tenant/case isolation",
-        "READ-ONLY nesta etapa",
-        "Auditoria ponta a ponta",
-        "Human review"
       ]
     },
     {
       "type": "steps",
-      "eyebrow": "EXECUÇÃO PARALELA",
-      "title": "O que seguimos fazendo enquanto aguardamos",
+      "eyebrow": "FLUXO DEMONSTRATIVO",
+      "title": "O que o usuário consegue fazer agora",
       "steps": [
         {
           "n": "01",
-          "title": "Domínio jurídico canônico",
-          "text": "Processos, documentos, eventos, evidências e acessos."
+          "title": "Ver a carteira",
+          "text": "Acompanhar processos demonstrativos e seus principais marcos."
         },
         {
           "n": "02",
-          "title": "Judicial Integration Hub",
-          "text": "Camada dedicada para adapters judiciais."
+          "title": "Abrir documentos",
+          "text": "Acessar referências públicas diretamente a partir da operação."
         },
         {
           "n": "03",
-          "title": "Simulação controlada",
-          "text": "Fluxo READ-ONLY sem credenciais reais."
+          "title": "Perguntar ao Assistente",
+          "text": "Consultar processo, documentos e marcos usando o conhecimento autorizado."
         },
         {
           "n": "04",
-          "title": "Homologação oficial",
-          "text": "Endpoints, credenciais, segurança e UAT quando liberados."
+          "title": "Evoluir depois",
+          "text": "Trocar dados públicos por integrações oficiais quando forem liberadas."
         }
       ]
-    },
-    {
-      "type": "agent_catalog",
-      "eyebrow": "EFATÁ INTELLIGENCE CENTER",
-      "title": "Uma organização digital de agentes — não um chatbot isolado",
-      "body": "A baseline atual da Efatá contém um catálogo organizacional premium de agentes executivos e especialistas. O próprio catálogo determina que registrado ≠ configurado ≠ pronto: por isso, esta seção mostra posicionamento e identidade organizacional sem transformar readiness não comprovada em promessa.",
-      "catalog_version": "ORKIO_EXECUTIVE_AGENT_CATALOG_R0_3_4_ONBOARDING_LANGUAGE_LOCALIZED_IDENTITIES_PROPOSAL_ONLY",
-      "catalog_status": "PROPOSAL_ONLY",
-      "registered_agent_count": 33,
-      "agents": [
-        {
-          "agent_id": "orkio",
-          "display_name": "Josué — Chief Executive Officer",
-          "role_label": "Chief Executive Officer",
-          "department": "Executive",
-          "specialties": [
-            "executive_strategy",
-            "decision_synthesis",
-            "organizational_orchestration",
-            "founder_advisory"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        },
-        {
-          "agent_id": "isadora",
-          "display_name": "Neemias — Chief Operating Officer",
-          "role_label": "Chief Operating Officer",
-          "department": "Operations",
-          "specialties": [
-            "operations",
-            "process_design",
-            "service_delivery",
-            "operational_risk"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        },
-        {
-          "agent_id": "helena",
-          "display_name": "Débora — Chief Legal Officer",
-          "role_label": "Chief Legal Officer",
-          "department": "Legal",
-          "specialties": [
-            "legal_risk",
-            "contracts",
-            "corporate_governance",
-            "compliance"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        },
-        {
-          "agent_id": "chris",
-          "display_name": "José — Chief Financial Officer",
-          "role_label": "Chief Financial Officer",
-          "department": "Finance",
-          "specialties": [
-            "corporate_finance",
-            "financial_planning",
-            "unit_economics",
-            "capital_allocation"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        },
-        {
-          "agent_id": "auditor",
-          "display_name": "Natã — Independent Technical Auditor",
-          "role_label": "Independent Technical Auditor",
-          "department": "Governance & Assurance",
-          "specialties": [
-            "technical_audit",
-            "evidence_analysis",
-            "risk_assessment",
-            "production_readiness"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        },
-        {
-          "agent_id": "security",
-          "display_name": "Mardoqueu — Core Security Guard / Policy Review",
-          "role_label": "Core Security Guard / Policy Review",
-          "department": "Security & Governance",
-          "specialties": [
-            "security_by_design",
-            "policy_review",
-            "least_privilege",
-            "tenant_isolation"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        },
-        {
-          "agent_id": "nuno",
-          "display_name": "Salomão — Strategy Director",
-          "role_label": "Strategy Director",
-          "department": "Strategy",
-          "specialties": [
-            "corporate_strategy",
-            "competitive_intelligence",
-            "scenario_planning",
-            "portfolio_strategy"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        },
-        {
-          "agent_id": "diana",
-          "display_name": "Obadias — Director of Privacy & Data Protection",
-          "role_label": "Director of Privacy & Data Protection",
-          "department": "Legal",
-          "specialties": [
-            "privacy",
-            "data_protection",
-            "lgpd",
-            "gdpr"
-          ],
-          "catalog_status": "REGISTERED_ORGANIZATIONAL_IDENTITY",
-          "runtime_readiness": "NOT_DECIDED_BY_CATALOG"
-        }
-      ],
-      "principles": [
-        "seleção explícita vence inferência",
-        "ownership_locked torna autoria imutável",
-        "contexto auxiliar não assume autoria",
-        "autoridade de negócio não equivale a autorização de sistema",
-        "registered ≠ configured ≠ ready"
-      ]
-    },
-    {
-      "type": "agent",
-      "eyebrow": "INOVAÇÃO NA EXPERIÊNCIA",
-      "title": "Converse com o Hyper Agente do Projeto Esteves",
-      "body": "Após o aceite de confidencialidade, cada destinatário poderá tirar dúvidas sobre o andamento, arquitetura, escopo e próximos marcos. As respostas são limitadas ao conhecimento autorizado do projeto.",
-      "rules": [
-        "Não inventa posição do TRF4",
-        "Não fixa preço ou prazo",
-        "Não acessa processos reais",
-        "Não expõe credenciais",
-        "Não presta aconselhamento jurídico",
-        "Registra auditoria do uso"
-      ]
-    },
-    {
-      "type": "closing",
-      "eyebrow": "PRÓXIMO MARCO",
-      "title": "Retorno técnico do TRF4 → homologação",
-      "body": "Quando os parâmetros oficiais forem recebidos, a camada já preparada poderá avançar para uma integração homologável, preservando READ-ONLY, segurança de credenciais e rastreabilidade."
     }
   ]
 }

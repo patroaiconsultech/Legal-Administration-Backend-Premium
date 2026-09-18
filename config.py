@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     environment: str = "development"
-    app_name: str = "Efatá Secure Briefing Portal"
+    app_name: str = "Estevez Guarda — Centro de Inteligência"
     public_base_url: str = "http://localhost:5173"
     frontend_origin: str = "http://localhost:5173"
     database_url: str = "sqlite:///./efata_secure.db"
