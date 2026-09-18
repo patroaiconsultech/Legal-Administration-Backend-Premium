@@ -54,3 +54,16 @@ class PushSubscriptionCreate(BaseModel):
     endpoint: str = Field(min_length=20, max_length=4096)
     p256dh: str = Field(min_length=20, max_length=4096)
     auth: str = Field(min_length=8, max_length=4096)
+
+
+class AccountActivationStart(BaseModel):
+    token: str = Field(min_length=32, max_length=500)
+
+class AccountActivationComplete(BaseModel):
+    token: str = Field(min_length=32, max_length=500)
+    code: str = Field(pattern=r"^\d{6}$")
+    password: str = Field(min_length=8, max_length=200)
+
+class AccountLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, Text, Integer, Boolean, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import String, DateTime, Text, Integer, Boolean, ForeignKey, UniqueConstraint, Index, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -89,6 +89,25 @@ class LegalAcceptance(Base):
     receipt_storage_key: Mapped[str | None] = mapped_column(String(500))
     receipt_sha256: Mapped[str | None] = mapped_column(String(64))
     evidence_created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+class PortalAccount(Base):
+    __tablename__ = "portal_accounts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    invitation_id: Mapped[str] = mapped_column(ForeignKey("invitations.id"), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(500), nullable=False)
+    state: Mapped[str] = mapped_column(String(30), default="ACTIVE", nullable=False)
+    activated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+    password_changed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("project_id", "email", name="uq_portal_account_project_email"),
+        CheckConstraint("state IN ('ACTIVE','SUSPENDED','REVOKED')", name="ck_portal_account_state"),
+        Index("ix_portal_account_email_state", "email", "state"),
+    )
 
 class AccessSession(Base):
     __tablename__ = "access_sessions"

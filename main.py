@@ -70,6 +70,56 @@ def _admin_session(db: Session, raw: str | None) -> AdminSession:
         raise HTTPException(401, "Sessão administrativa inválida.")
     return s
 
+def access_cookie_samesite() -> str:
+    # Current MVP uses separate frontend/backend Railway origins.
+    # Secure production cookies therefore need SameSite=None to participate in
+    # credentialed fetches. Local HTTP development stays Lax.
+    return "none" if settings.cookie_secure else "lax"
+
+def set_access_cookies(response: Response, raw_session: str, csrf: str) -> None:
+    same_site = access_cookie_samesite()
+    response.set_cookie(
+        "efata_secure_session", raw_session,
+        httponly=True, secure=settings.cookie_secure, samesite=same_site,
+        max_age=settings.access_session_hours*3600, path="/"
+    )
+    response.set_cookie(
+        "efata_csrf", csrf,
+        httponly=False, secure=settings.cookie_secure, samesite=same_site,
+        max_age=settings.access_session_hours*3600, path="/"
+    )
+
+def clear_access_cookies(response: Response) -> None:
+    same_site = access_cookie_samesite()
+    response.delete_cookie("efata_secure_session", path="/", secure=settings.cookie_secure, samesite=same_site)
+    response.delete_cookie("efata_csrf", path="/", secure=settings.cookie_secure, samesite=same_site)
+
+def create_portal_session(db: Session, inv: Invitation, response: Response) -> tuple[AccessSession, str]:
+    raw = random_token()
+    sess = AccessSession(
+        invitation_id=inv.id,
+        session_token_hash=sha256_text(raw),
+        email_verified_at=inv.email_verified_at or now(),
+        expires_at=expires(hours=settings.access_session_hours),
+    )
+    # Returning users inherit a still-current legal acceptance. If the term
+    # changed and requires reacceptance, BriefingGate will ask again.
+    latest_acc = db.scalar(
+        select(LegalAcceptance)
+        .where(LegalAcceptance.invitation_id == inv.id)
+        .order_by(desc(LegalAcceptance.accepted_at))
+    )
+    if latest_acc:
+        term = current_term(db, inv.project_id)
+        if (not term.requires_reacceptance) or latest_acc.term_id == term.id:
+            sess.acceptance_id = latest_acc.id
+            sess.authorized_at = now()
+    db.add(sess)
+    db.flush()
+    csrf = random_token(24)
+    set_access_cookies(response, raw, csrf)
+    return sess, csrf
+
 def verify_csrf(request: Request, header: str | None):
     cookie = request.cookies.get("efata_csrf")
     if not cookie or not header or not secrets.compare_digest(cookie, header):
@@ -168,6 +218,20 @@ async def create_access_request(payload: AccessRequestCreate, request: Request, 
         raise HTTPException(503, "Projeto indisponível.")
 
     email = normalize_email(str(payload.email))
+    active_account = db.scalar(
+        select(PortalAccount).where(
+            PortalAccount.project_id == project.id,
+            PortalAccount.email == email,
+            PortalAccount.state == "ACTIVE",
+        )
+    )
+    if active_account:
+        return {
+            "status": "ACCOUNT_ACTIVE",
+            "message": "Este e-mail já possui acesso ativo. Use Entrar.",
+            "login_path": "/login",
+        }
+
     fp = request_fingerprint(request, email)
     window_start = now() - timedelta(minutes=settings.access_request_window_minutes)
     recent_count = db.scalar(
@@ -268,9 +332,218 @@ def consume_approved_access(payload: AccessConsumeRequest, request: Request, res
     db.commit()
 
     csrf = random_token(24)
-    response.set_cookie("efata_secure_session", raw, httponly=True, secure=settings.cookie_secure, samesite="strict", max_age=settings.access_session_hours*3600, path="/")
-    response.set_cookie("efata_csrf", csrf, httponly=False, secure=settings.cookie_secure, samesite="strict", max_age=settings.access_session_hours*3600, path="/")
+    set_access_cookies(response, raw, csrf)
     return {"ok": True, "csrf": csrf}
+
+
+
+@app.post("/api/account/activation/start")
+async def account_activation_start(payload: AccountActivationStart, request: Request, db: Session = Depends(db_session)):
+    inv = _invite(db, payload.token)
+    email = normalize_email(inv.recipient_email)
+    existing = db.scalar(
+        select(PortalAccount).where(
+            PortalAccount.project_id == inv.project_id,
+            PortalAccount.email == email,
+            PortalAccount.state == "ACTIVE",
+        )
+    )
+    if existing:
+        raise HTTPException(409, "Conta já ativada. Use a tela Entrar.")
+
+    recent = db.scalar(
+        select(OTPChallenge).where(
+            OTPChallenge.subject_type == "INVITATION",
+            OTPChallenge.subject_id == inv.id,
+            OTPChallenge.purpose == "ACCOUNT_ACTIVATION",
+            OTPChallenge.validated_at.is_(None),
+            OTPChallenge.invalidated_at.is_(None),
+        ).order_by(desc(OTPChallenge.issued_at))
+    )
+    if recent and recent.expires_at > now() and recent.issued_at > now() - timedelta(seconds=45):
+        return {"ok": True, "message": "Código já enviado. Confira seu e-mail.", "resent": False}
+
+    code = otp_code()
+    challenge = OTPChallenge(
+        subject_type="INVITATION",
+        subject_id=inv.id,
+        purpose="ACCOUNT_ACTIVATION",
+        otp_hash=hash_otp(code),
+        expires_at=expires(minutes=settings.otp_minutes),
+    )
+    db.add(challenge)
+    log_event(db, request, "ACCOUNT_ACTIVATION_OTP_ISSUED", project_id=inv.project_id, invitation_id=inv.id)
+    db.commit()
+
+    try:
+        await send_email(
+            inv.recipient_email,
+            "Código de ativação — Estevez Guarda",
+            f"<p>Seu acesso foi aprovado.</p>"
+            f"<p>Use o código abaixo para ativar sua conta no Estevez Guarda:</p>"
+            f"<h2>{code}</h2>"
+            f"<p>Validade: {settings.otp_minutes} minutos.</p>"
+        )
+    except Exception as exc:
+        challenge.invalidated_at = now()
+        log_event(
+            db, request, "ACCOUNT_ACTIVATION_OTP_DELIVERY_FAILED",
+            project_id=inv.project_id, invitation_id=inv.id,
+            metadata={"error_type": type(exc).__name__},
+        )
+        db.commit()
+        raise HTTPException(502, "Não foi possível enviar o código de ativação. Tente novamente.")
+
+    log_event(db, request, "ACCOUNT_ACTIVATION_OTP_SENT", project_id=inv.project_id, invitation_id=inv.id)
+    db.commit()
+    masked = email[:2] + "***@" + email.split("@",1)[1]
+    return {"ok": True, "message": "Código enviado.", "recipient_email_masked": masked, "resent": True}
+
+
+@app.post("/api/account/activation/complete")
+def account_activation_complete(payload: AccountActivationComplete, request: Request, response: Response, db: Session = Depends(db_session)):
+    token_hash = sha256_text(payload.token)
+    inv = db.scalar(select(Invitation).where(Invitation.token_hash == token_hash).with_for_update())
+    if not inv or inv.revoked_at or inv.expires_at <= now():
+        raise HTTPException(404, "Ativação inválida, expirada ou revogada.")
+    if inv.link_consumed_at is not None:
+        raise HTTPException(409, "Este acesso já foi ativado. Use Entrar.")
+
+    challenge = db.scalar(
+        select(OTPChallenge).where(
+            OTPChallenge.subject_type == "INVITATION",
+            OTPChallenge.subject_id == inv.id,
+            OTPChallenge.purpose == "ACCOUNT_ACTIVATION",
+            OTPChallenge.validated_at.is_(None),
+            OTPChallenge.invalidated_at.is_(None),
+        ).order_by(desc(OTPChallenge.issued_at))
+    )
+    if not challenge or challenge.expires_at <= now():
+        raise HTTPException(400, "Código expirado ou inexistente.")
+
+    challenge.attempt_count += 1
+    if challenge.attempt_count > settings.otp_max_attempts:
+        challenge.invalidated_at = now()
+        db.commit()
+        raise HTTPException(429, "Número máximo de tentativas excedido.")
+    if not verify_otp(payload.code, challenge.otp_hash):
+        db.commit()
+        raise HTTPException(400, "Código inválido.")
+
+    email = normalize_email(inv.recipient_email)
+    existing = db.scalar(
+        select(PortalAccount).where(
+            PortalAccount.project_id == inv.project_id,
+            PortalAccount.email == email,
+        ).with_for_update()
+    )
+    if existing and existing.state == "ACTIVE":
+        raise HTTPException(409, "Conta já ativada. Use Entrar.")
+
+    from .security import hash_password
+    timestamp = now()
+    if existing:
+        existing.invitation_id = inv.id
+        existing.password_hash = hash_password(payload.password)
+        existing.state = "ACTIVE"
+        existing.activated_at = timestamp
+        existing.password_changed_at = timestamp
+        existing.updated_at = timestamp
+        account = existing
+    else:
+        account = PortalAccount(
+            project_id=inv.project_id,
+            invitation_id=inv.id,
+            email=email,
+            password_hash=hash_password(payload.password),
+            state="ACTIVE",
+            activated_at=timestamp,
+            password_changed_at=timestamp,
+            updated_at=timestamp,
+        )
+        db.add(account)
+
+    challenge.validated_at = timestamp
+    inv.email_verified_at = timestamp
+    inv.link_consumed_at = timestamp
+    sess, csrf = create_portal_session(db, inv, response)
+    account.last_login_at = timestamp
+
+    log_event(
+        db, request, "PORTAL_ACCOUNT_ACTIVATED",
+        project_id=inv.project_id, invitation_id=inv.id, access_session_id=sess.id,
+        metadata={"account_id": account.id, "authentication_method": "EMAIL_OTP_ACTIVATION"},
+    )
+    db.commit()
+    return {"ok": True, "csrf": csrf, "next": "/briefing"}
+
+
+@app.post("/api/account/login")
+def account_login(payload: AccountLoginRequest, request: Request, response: Response, db: Session = Depends(db_session)):
+    from .security import verify_password
+    email = normalize_email(str(payload.email))
+    account = db.scalar(
+        select(PortalAccount).where(
+            PortalAccount.email == email,
+            PortalAccount.state == "ACTIVE",
+        )
+    )
+    if not account or not verify_password(payload.password, account.password_hash):
+        raise HTTPException(401, "E-mail ou senha inválidos.")
+
+    inv = db.get(Invitation, account.invitation_id)
+    if not inv or inv.revoked_at:
+        raise HTTPException(403, "Acesso revogado. Solicite nova liberação.")
+
+    sess, csrf = create_portal_session(db, inv, response)
+    account.last_login_at = now()
+    account.updated_at = now()
+    log_event(
+        db, request, "PORTAL_LOGIN_SUCCESS",
+        project_id=account.project_id, invitation_id=inv.id, access_session_id=sess.id,
+        metadata={"account_id": account.id},
+    )
+    db.commit()
+    return {"ok": True, "csrf": csrf, "next": "/briefing"}
+
+
+@app.get("/api/account/me")
+def account_me(db: Session = Depends(db_session), efata_secure_session: str | None = Cookie(default=None)):
+    sess = _session(db, efata_secure_session)
+    inv = db.get(Invitation, sess.invitation_id)
+    account = db.scalar(
+        select(PortalAccount).where(
+            PortalAccount.invitation_id == sess.invitation_id,
+            PortalAccount.state == "ACTIVE",
+        )
+    )
+    if not inv or not account:
+        raise HTTPException(401, "Conta não encontrada.")
+    return {
+        "email": account.email,
+        "name": inv.recipient_name,
+        "organization": inv.organization_name,
+        "role": inv.recipient_role,
+    }
+
+
+@app.post("/api/account/logout")
+def account_logout(request: Request, response: Response, db: Session = Depends(db_session),
+                   efata_secure_session: str | None = Cookie(default=None),
+                   x_csrf_token: str | None = Header(default=None)):
+    verify_csrf(request, x_csrf_token)
+    sess = _session(db, efata_secure_session)
+    sess.revoked_at = now()
+    inv = db.get(Invitation, sess.invitation_id)
+    log_event(
+        db, request, "PORTAL_LOGOUT",
+        project_id=inv.project_id if inv else None,
+        invitation_id=inv.id if inv else None,
+        access_session_id=sess.id,
+    )
+    db.commit()
+    clear_access_cookies(response)
+    return {"ok": True}
 
 
 @app.get("/api/invite/{token}")
@@ -311,8 +584,8 @@ async def request_otp(payload: IdentifyRequest, request: Request, db: Session = 
     db.commit()
     await send_email(
         inv.recipient_email,
-        "Seu código de acesso — Efatá",
-        f"<p>Seu código temporário para o portal confidencial Efatá é:</p><h2>{code}</h2><p>Validade: {settings.otp_minutes} minutos. Não compartilhe este código.</p>"
+        "Seu código de acesso — Estevez Guarda",
+        f"<p>Seu código temporário para o portal Estevez Guarda é:</p><h2>{code}</h2><p>Validade: {settings.otp_minutes} minutos. Não compartilhe este código.</p>"
     )
     return {"ok":True,"message":"Código enviado ao e-mail do convite."}
 
@@ -351,8 +624,7 @@ def verify_access_otp(payload: OTPVerifyRequest, request: Request, response: Res
     db.commit()
 
     csrf = random_token(24)
-    response.set_cookie("efata_secure_session", raw, httponly=True, secure=settings.cookie_secure, samesite="strict", max_age=settings.access_session_hours*3600, path="/")
-    response.set_cookie("efata_csrf", csrf, httponly=False, secure=settings.cookie_secure, samesite="strict", max_age=settings.access_session_hours*3600, path="/")
+    set_access_cookies(response, raw, csrf)
     return {"ok":True,"csrf":csrf}
 
 @app.get("/api/legal/term")
@@ -404,7 +676,11 @@ async def accept_term(payload: AcceptRequest, request: Request, response: Respon
             recipient_role=inv.recipient_role,
             representation_mode=payload.representation_mode,
             representation_declaration=declaration,
-            authentication_method="ADMIN_APPROVED_MAGIC_LINK",
+            authentication_method=(
+                "ACCOUNT_PASSWORD_AFTER_EMAIL_OTP"
+                if db.scalar(select(PortalAccount).where(PortalAccount.invitation_id == inv.id))
+                else "ADMIN_APPROVED_MAGIC_LINK"
+            ),
             email_verified_at=inv.email_verified_at,
             timezone=payload.timezone,
             ip_address=client_ip(request),
@@ -435,7 +711,7 @@ async def accept_term(payload: AcceptRequest, request: Request, response: Respon
 
     await send_email(
         acc.recipient_email,
-        "Comprovante de aceite — Efatá",
+        "Comprovante de aceite — Estevez Guarda",
         f"<p>Seu aceite foi registrado.</p><p><b>Aceite:</b> {acc.id}<br><b>Termo:</b> v{acc.term_version}<br><b>SHA-256:</b> {acc.term_document_sha256}</p><p>O comprovante permanece disponível no portal durante sua sessão autorizada.</p>"
     )
     return {"ok":True,"acceptance_id":acc.id,"evidence_id":acc.evidence_id,"access_id":acc.access_id,"term_sha256":acc.term_document_sha256}
@@ -531,7 +807,7 @@ async def admin_start(payload: AdminStartRequest, request: Request, db: Session 
     code = otp_code()
     ch = OTPChallenge(subject_type="ADMIN", subject_id=payload.email.lower(), purpose="ADMIN_LOGIN", otp_hash=hash_otp(code), expires_at=expires(minutes=settings.otp_minutes))
     db.add(ch); db.commit()
-    await send_email(payload.email, "Código administrativo — Efatá", f"<p>Código de autenticação administrativa:</p><h2>{code}</h2>")
+    await send_email(payload.email, "Código administrativo — Estevez Guarda", f"<p>Código de autenticação administrativa:</p><h2>{code}</h2>")
     return {"ok":True}
 
 @app.post("/api/admin/auth/verify")
@@ -618,6 +894,15 @@ async def admin_approve_access_request(access_request_id: str, payload: AdminAcc
         raise HTTPException(404, "Solicitação não encontrada.")
     if row.state != "PENDING_ADMIN_APPROVAL":
         raise HTTPException(409, f"Solicitação já está em estado {row.state}.")
+    existing_account = db.scalar(
+        select(PortalAccount).where(
+            PortalAccount.project_id == row.project_id,
+            PortalAccount.email == normalize_email(row.email),
+            PortalAccount.state == "ACTIVE",
+        )
+    )
+    if existing_account:
+        raise HTTPException(409, "Este e-mail já possui uma conta ativa. Use a tela Entrar.")
 
     token = random_token(32)
     inv = Invitation(
@@ -642,17 +927,20 @@ async def admin_approve_access_request(access_request_id: str, payload: AdminAcc
     )
     db.commit()
 
-    link = f"{settings.public_base_url.rstrip('/')}/a/{token}"
+    link = f"{settings.public_base_url.rstrip('/')}/activate/{token}"
+    email_delivery = "failed"
     try:
         await send_email(
             row.email,
-            "Acesso aprovado — Efatá",
-            f"<p>Seu acesso ao briefing confidencial do Projeto Esteves foi aprovado.</p>"
-            f"<p><a href='{html.escape(link)}'>Acessar briefing confidencial</a></p>"
-            f"<p>O link é individual, de uso único e expira em {settings.approval_link_hours} horas.</p>"
+            "Acesso aprovado — Estevez Guarda",
+            f"<p>Seu acesso ao Estevez Guarda foi aprovado.</p>"
+            f"<p><a href='{html.escape(link)}'>Ativar minha conta</a></p>"
+            f"<p>Na ativação você receberá um código por e-mail e definirá sua senha.</p>"
+            f"<p>O link de ativação é individual e expira em {settings.approval_link_hours} horas.</p>"
         )
         row.approval_notified_at = now()
         row.approval_delivery_error = None
+        email_delivery = "sent"
         log_event(db, request, "APPROVAL_LINK_SENT", project_id=row.project_id, invitation_id=inv.id,
                   metadata={"access_request_id": row.id})
         db.commit()
@@ -661,7 +949,12 @@ async def admin_approve_access_request(access_request_id: str, payload: AdminAcc
         log_event(db, request, "APPROVAL_LINK_DELIVERY_FAILED", project_id=row.project_id, invitation_id=inv.id,
                   metadata={"access_request_id": row.id})
         db.commit()
-    return {"ok": True, "state": row.state, "request_id": row.id}
+    return {
+        "ok": True,
+        "state": row.state,
+        "request_id": row.id,
+        "email_delivery": email_delivery,
+    }
 
 @app.post("/api/admin/access-requests/{access_request_id}/reject")
 async def admin_reject_access_request(access_request_id: str, payload: AdminAccessDecision, request: Request,
@@ -685,7 +978,7 @@ async def admin_reject_access_request(access_request_id: str, payload: AdminAcce
     try:
         await send_email(
             row.email,
-            "Atualização da solicitação de acesso — Efatá",
+            "Atualização da solicitação de acesso — Estevez Guarda",
             "<p>Sua solicitação foi analisada. O acesso não foi liberado neste momento.</p>"
         )
     except Exception:
@@ -705,7 +998,7 @@ async def create_invitation(payload: CreateInvitationRequest, request: Request, 
                      expires_at=expires(days=payload.days_valid))
     db.add(inv); db.commit()
     link = f"{settings.public_base_url.rstrip('/')}/i/{raw}"
-    await send_email(inv.recipient_email, "Convite confidencial — Efatá", f"<p>Você recebeu acesso individual ao briefing confidencial do Projeto Estevez.</p><p><a href='{html.escape(link)}'>Acessar portal</a></p><p>Não encaminhe este link.</p>")
+    await send_email(inv.recipient_email, "Convite — Estevez Guarda", f"<p>Você recebeu acesso individual ao briefing confidencial do Projeto Estevez.</p><p><a href='{html.escape(link)}'>Acessar portal</a></p><p>Não encaminhe este link.</p>")
     return {"id":inv.id,"link":link,"expires_at":inv.expires_at}
 
 @app.get("/api/admin/overview")
