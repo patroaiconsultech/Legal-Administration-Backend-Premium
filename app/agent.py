@@ -5,6 +5,14 @@ from .config import get_settings
 settings = get_settings()
 KB = Path(__file__).resolve().parent.parent / "private_seed" / "knowledge"
 
+# MVP active knowledge is explicit. Historical/internal documents may remain in the
+# repository, but they must not silently enter the user-facing retrieval context.
+ACTIVE_KNOWLEDGE = (
+    "ESTEVEZ_MVP_PUBLICO",
+    "TRF4",
+    "AGENTE",
+)
+
 SYSTEM_PROMPT = """
 Você é o Assistente Estevez do Centro de Inteligência da Administração Judicial.
 
@@ -34,9 +42,11 @@ def _tokenize(s: str):
 
 def load_sources():
     sources = []
-    for p in sorted(KB.glob("*.md")):
+    for label in ACTIVE_KNOWLEDGE:
+        p = KB / f"{label}.md"
+        if not p.exists():
+            continue
         text = p.read_text(encoding="utf-8")
-        label = p.stem
         sources.append({"label": label, "text": text, "tokens": _tokenize(text)})
     return sources
 
@@ -51,7 +61,7 @@ def retrieve(question: str, k: int = 5):
     scored.sort(key=lambda x: x[0], reverse=True)
     chosen = [s for score, s in scored if score > 0][:k]
     if not chosen:
-        chosen = [s for s in SOURCES if s["label"] in {"STATUS", "AGENTE", "CONFIDENCIALIDADE"}]
+        chosen = [s for s in SOURCES if s["label"] in {"ESTEVEZ_MVP_PUBLICO", "TRF4", "AGENTE"}]
     return chosen[:k]
 
 async def answer(question: str):

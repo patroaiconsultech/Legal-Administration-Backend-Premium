@@ -1,35 +1,66 @@
---- a/app/main.py
-+++ b/app/main.py
-@@ -735,10 +735,31 @@
-     key = key_prefix + "2026-09-18.mvp1.json"
-     data, _ = storage.get(key)
-     payload = json.loads(data)
+--- a/app/agent.py
++++ b/app/agent.py
+@@ -5,17 +5,27 @@
+ settings = get_settings()
+ KB = Path(__file__).resolve().parent.parent / "private_seed" / "knowledge"
+ 
++# MVP active knowledge is explicit. Historical/internal documents may remain in the
++# repository, but they must not silently enter the user-facing retrieval context.
++ACTIVE_KNOWLEDGE = (
++    "ESTEVEZ_MVP_PUBLICO",
++    "TRF4",
++    "AGENTE",
++)
 +
-+    # Runtime operational state is authoritative for the assistant status.
-+    # The persisted presentation JSON is editorial/versioned content and may
-+    # contain historical status text, so reconcile it before returning.
-+    agent_enabled = bool(settings.agent_enabled)
-     payload["viewer"] = {
-         "name":acc.recipient_name, "organization":acc.organization_name, "access_id":acc.access_id,
--        "agent_enabled":settings.agent_enabled,
-+        "agent_enabled":agent_enabled,
-     }
-+    for section in payload.get("sections", []):
-+        if section.get("type") != "status":
+ SYSTEM_PROMPT = """
+ Você é o Assistente Estevez do Centro de Inteligência da Administração Judicial.
+ 
+ MISSÃO:
+ Ajudar a equipe e convidados a navegar pelo MVP da Estevez Guarda, usando EXCLUSIVAMENTE o CONTEXTO AUTORIZADO
+ fornecido em cada chamada.
++
+ PRIORIDADES:
+ - Responder sobre as operações demonstrativas, seus marcos e documentos carregados no MVP.
+ - Explicar de forma executiva o que aconteceu em cada processo usando apenas as fontes autorizadas.
+ - Quando houver URL pública no contexto, indicar que a fonte está disponível no site público da Estevez Guarda.
+ - Diferenciar claramente dado público carregado no MVP de integração live.
++
+ REGRAS:
+ - Não invente fatos, datas, valores, credores, decisões, eventos ou conteúdo documental não presente no contexto.
+ - Não afirme que consulta eproc em tempo real.
+@@ -26,18 +36,22 @@
+ - Cite as fontes ao final usando os identificadores fornecidos, por exemplo [ESTEVEZ_MVP_PUBLICO].
+ - Responda em português do Brasil, de forma objetiva, operacional e clara.
+ """
++
+ def _tokenize(s: str):
+     return set(re.findall(r"[a-zA-ZÀ-ÿ0-9_]{3,}", s.lower()))
+ 
+ def load_sources():
+     sources = []
+-    for p in sorted(KB.glob("*.md")):
++    for label in ACTIVE_KNOWLEDGE:
++        p = KB / f"{label}.md"
++        if not p.exists():
 +            continue
-+        for card in section.get("cards", []):
-+            if card.get("label") != "ASSISTENTE ESTEVEZ":
-+                continue
-+            if agent_enabled:
-+                card["value"] = "ATIVO"
-+                card["tone"] = "good"
-+                card["text"] = "O Assistente Estevez está habilitado neste ambiente."
-+            else:
-+                card["value"] = "CONFIGURAR IA"
-+                card["tone"] = "warn"
-+                card["text"] = "O Assistente Estevez ainda não está habilitado neste ambiente."
-+            break
+         text = p.read_text(encoding="utf-8")
+-        label = p.stem
+         sources.append({"label": label, "text": text, "tokens": _tokenize(text)})
+     return sources
+ 
+ SOURCES = load_sources()
 +
-     log_event(db, request, "CONTENT_ACCESSED", project_id=inv.project_id, invitation_id=inv.id, acceptance_id=acc.id, access_session_id=s.id,
-               metadata={"content":"presentation","version":payload["version"]})
-     db.commit()
+ def retrieve(question: str, k: int = 5):
+     q = _tokenize(question)
+     scored = []
+@@ -47,8 +61,9 @@
+     scored.sort(key=lambda x: x[0], reverse=True)
+     chosen = [s for score, s in scored if score > 0][:k]
+     if not chosen:
+-        chosen = [s for s in SOURCES if s["label"] in {"STATUS", "AGENTE", "CONFIDENCIALIDADE"}]
++        chosen = [s for s in SOURCES if s["label"] in {"ESTEVEZ_MVP_PUBLICO", "TRF4", "AGENTE"}]
+     return chosen[:k]
++
+ async def answer(question: str):
+     if not settings.agent_enabled:
+         raise RuntimeError("Hyper Agente desabilitado por governança")
