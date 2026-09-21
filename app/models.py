@@ -109,6 +109,57 @@ class PortalAccount(Base):
         Index("ix_portal_account_email_state", "email", "state"),
     )
 
+
+class ProposalDocument(Base):
+    __tablename__ = "proposal_documents"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    version: Mapped[str] = mapped_column(String(80), nullable=False)
+    document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime)
+    published_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("project_id", "version", name="uq_proposal_project_version"),
+        Index("ix_proposal_project_published", "project_id", "published_at"),
+    )
+
+class ProposalAcceptance(Base):
+    __tablename__ = "proposal_acceptances"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    evidence_id: Mapped[str] = mapped_column(String(36), unique=True, default=uid, nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    proposal_id: Mapped[str] = mapped_column(ForeignKey("proposal_documents.id"), nullable=False)
+    invitation_id: Mapped[str] = mapped_column(ForeignKey("invitations.id"), nullable=False)
+    account_id: Mapped[str] = mapped_column(ForeignKey("portal_accounts.id"), nullable=False)
+    proposal_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    proposal_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    acceptance_text_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    acceptance_text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    recipient_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    recipient_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    organization_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    recipient_role: Mapped[str] = mapped_column(String(255), nullable=False)
+    representation_mode: Mapped[str] = mapped_column(String(50), nullable=False)
+    representation_declaration: Mapped[str | None] = mapped_column(Text)
+    authentication_method: Mapped[str] = mapped_column(String(80), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    timezone: Mapped[str] = mapped_column(String(100), nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(128))
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    access_id: Mapped[str] = mapped_column(String(36), default=uid, unique=True, nullable=False)
+    receipt_storage_key: Mapped[str | None] = mapped_column(String(500))
+    receipt_sha256: Mapped[str | None] = mapped_column(String(64))
+    evidence_created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "invitation_id", name="uq_proposal_acceptance_invitation"),
+        Index("ix_proposal_acceptance_proposal", "proposal_id", "accepted_at"),
+        Index("ix_proposal_acceptance_invitation", "invitation_id", "accepted_at"),
+    )
+
 class AccessSession(Base):
     __tablename__ = "access_sessions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)

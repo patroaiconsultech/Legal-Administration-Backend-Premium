@@ -67,3 +67,15 @@ class AccountActivationComplete(BaseModel):
 class AccountLoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
+
+
+class ProposalPublishRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=255)
+    version: str = Field(min_length=1, max_length=80)
+    html: str = Field(min_length=100, max_length=4_000_000)
+
+class ProposalAcceptRequest(BaseModel):
+    timezone: str = Field(min_length=1, max_length=100)
+    representation_mode: str
+    representation_declaration: str | None = None
+    accepted: bool

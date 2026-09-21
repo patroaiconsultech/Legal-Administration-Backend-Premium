@@ -15,6 +15,7 @@ from .audit import log_event, client_ip
 from .emailer import send_email
 from .storage import get_storage
 from .receipt import build_receipt
+from .proposal_receipt import build_proposal_receipt
 from .agent import answer as agent_answer
 from .push import send_admin_push, push_available
 
@@ -45,7 +46,19 @@ def no_store(response: Response):
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     no_store(response)
-    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    if request.url.path == "/api/proposal/render":
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; "
+            "img-src data:; "
+            "style-src 'unsafe-inline'; "
+            "script-src 'unsafe-inline'; "
+            f"frame-ancestors {settings.frontend_origin}; "
+            "base-uri 'none'; form-action 'none'; connect-src 'none'"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        )
     return response
 
 def _invite(db: Session, token: str) -> Invitation:
@@ -147,6 +160,54 @@ def current_term(db: Session, project_id: str) -> LegalTerm:
     if not term:
         raise HTTPException(503, "Termo não publicado.")
     return term
+
+
+PROPOSAL_ACCEPTANCE_TEXT_VERSION = "1.0"
+PROPOSAL_ACCEPTANCE_TEXT_PATH = Path(__file__).resolve().parents[1] / "proposal_access_term_v1.md"
+
+
+def proposal_acceptance_text() -> tuple[str, str]:
+    data = PROPOSAL_ACCEPTANCE_TEXT_PATH.read_bytes()
+    return data.decode("utf-8"), hashlib.sha256(data).hexdigest()
+
+
+def current_proposal(db: Session, project_id: str) -> ProposalDocument:
+    proposal = db.scalar(
+        select(ProposalDocument)
+        .where(
+            ProposalDocument.project_id == project_id,
+            ProposalDocument.superseded_at.is_(None),
+        )
+        .order_by(desc(ProposalDocument.published_at))
+    )
+    if not proposal:
+        raise HTTPException(404, "Proposta comercial ainda não publicada.")
+    return proposal
+
+
+def active_portal_account(db: Session, invitation_id: str) -> PortalAccount:
+    account = db.scalar(
+        select(PortalAccount).where(
+            PortalAccount.invitation_id == invitation_id,
+            PortalAccount.state == "ACTIVE",
+        )
+    )
+    if not account:
+        raise HTTPException(403, "Conta ativa é obrigatória para acessar a proposta.")
+    return account
+
+
+def proposal_acceptance_for(
+    db: Session,
+    proposal_id: str,
+    invitation_id: str,
+) -> ProposalAcceptance | None:
+    return db.scalar(
+        select(ProposalAcceptance).where(
+            ProposalAcceptance.proposal_id == proposal_id,
+            ProposalAcceptance.invitation_id == invitation_id,
+        )
+    )
 
 
 def normalize_email(value: str) -> str:
@@ -727,6 +788,257 @@ def require_authorized(db: Session, raw: str | None):
         raise HTTPException(428, "Novo aceite obrigatório.")
     return s, inv, acc, term
 
+
+@app.get("/api/proposal/status")
+def proposal_status(
+    request: Request,
+    db: Session = Depends(db_session),
+    efata_secure_session: str | None = Cookie(default=None),
+):
+    s, inv, legal_acc, term = require_authorized(db, efata_secure_session)
+    account = active_portal_account(db, inv.id)
+    proposal = current_proposal(db, inv.project_id)
+    acceptance = proposal_acceptance_for(db, proposal.id, inv.id)
+    acceptance_text, acceptance_text_sha256 = proposal_acceptance_text()
+
+    log_event(
+        db,
+        request,
+        "PROPOSAL_STATUS_VIEWED",
+        project_id=inv.project_id,
+        invitation_id=inv.id,
+        acceptance_id=legal_acc.id,
+        access_session_id=s.id,
+        metadata={
+            "proposal_id": proposal.id,
+            "proposal_version": proposal.version,
+            "proposal_sha256": proposal.document_sha256,
+            "proposal_accepted": bool(acceptance),
+            "account_id": account.id,
+        },
+    )
+    db.commit()
+
+    return {
+        "title": proposal.title,
+        "version": proposal.version,
+        "sha256": proposal.document_sha256,
+        "published_at": proposal.published_at,
+        "accepted": bool(acceptance),
+        "proposal_acceptance_id": acceptance.id if acceptance else None,
+        "evidence_id": acceptance.evidence_id if acceptance else None,
+        "acceptance_text_version": PROPOSAL_ACCEPTANCE_TEXT_VERSION,
+        "acceptance_text_sha256": acceptance_text_sha256,
+        "acceptance_text": acceptance_text if not acceptance else None,
+        "viewer": {
+            "name": inv.recipient_name,
+            "email": account.email,
+            "organization": inv.organization_name,
+            "role": inv.recipient_role,
+        },
+    }
+
+
+@app.post("/api/proposal/accept")
+def proposal_accept(
+    payload: ProposalAcceptRequest,
+    request: Request,
+    db: Session = Depends(db_session),
+    efata_secure_session: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None),
+):
+    verify_csrf(request, x_csrf_token)
+    if not payload.accepted:
+        raise HTTPException(400, "Aceite expresso da proposta é obrigatório.")
+    if payload.representation_mode not in {"PERSONAL", "PERSONAL_AND_ORGANIZATION"}:
+        raise HTTPException(400, "Forma de vinculação inválida.")
+
+    s, inv, legal_acc, term = require_authorized(db, efata_secure_session)
+    account = active_portal_account(db, inv.id)
+    proposal = current_proposal(db, inv.project_id)
+
+    existing = proposal_acceptance_for(db, proposal.id, inv.id)
+    if existing:
+        return {
+            "ok": True,
+            "proposal_acceptance_id": existing.id,
+            "evidence_id": existing.evidence_id,
+            "access_id": existing.access_id,
+            "proposal_sha256": existing.proposal_sha256,
+        }
+
+    acceptance_text, acceptance_text_sha256 = proposal_acceptance_text()
+    declaration = payload.representation_declaration
+    if payload.representation_mode == "PERSONAL_AND_ORGANIZATION" and not declaration:
+        declaration = (
+            "Declaro possuir poderes suficientes para registrar este aceite "
+            "também em nome da organização informada."
+        )
+
+    accepted_at = now()
+    acc = ProposalAcceptance(
+        project_id=inv.project_id,
+        proposal_id=proposal.id,
+        invitation_id=inv.id,
+        account_id=account.id,
+        proposal_version=proposal.version,
+        proposal_sha256=proposal.document_sha256,
+        acceptance_text_version=PROPOSAL_ACCEPTANCE_TEXT_VERSION,
+        acceptance_text_sha256=acceptance_text_sha256,
+        recipient_name=inv.recipient_name or account.email,
+        recipient_email=account.email,
+        organization_name=inv.organization_name,
+        recipient_role=inv.recipient_role or "Não informado",
+        representation_mode=payload.representation_mode,
+        representation_declaration=declaration,
+        authentication_method="PORTAL_ACCOUNT_SESSION_AFTER_EMAIL_OTP_ACTIVATION",
+        accepted_at=accepted_at,
+        timezone=payload.timezone,
+        ip_address=observed_ip(request),
+        user_agent=(request.headers.get("user-agent") or "")[:2000],
+    )
+    db.add(acc)
+    db.flush()
+
+    receipt_bytes = build_proposal_receipt(
+        {
+            "acceptance_id": acc.id,
+            "evidence_id": acc.evidence_id,
+            "proposal_title": proposal.title,
+            "proposal_version": proposal.version,
+            "proposal_sha256": proposal.document_sha256,
+            "acceptance_text_version": PROPOSAL_ACCEPTANCE_TEXT_VERSION,
+            "acceptance_text_sha256": acceptance_text_sha256,
+            "recipient_name": acc.recipient_name,
+            "recipient_email": acc.recipient_email,
+            "organization": acc.organization_name,
+            "role": acc.recipient_role,
+            "representation_mode": acc.representation_mode,
+            "authentication_method": acc.authentication_method,
+            "accepted_at": accepted_at.isoformat() + "Z",
+            "timezone": acc.timezone,
+        }
+    )
+    receipt_key = f"projects/estevez-guarda/proposal-receipts/{acc.id}.pdf"
+    storage.put(receipt_key, receipt_bytes, "application/pdf")
+    acc.receipt_storage_key = receipt_key
+    acc.receipt_sha256 = hashlib.sha256(receipt_bytes).hexdigest()
+
+    log_event(
+        db,
+        request,
+        "PROPOSAL_ACCEPTANCE_COMMITTED",
+        project_id=inv.project_id,
+        invitation_id=inv.id,
+        acceptance_id=legal_acc.id,
+        access_session_id=s.id,
+        metadata={
+            "proposal_acceptance_id": acc.id,
+            "proposal_evidence_id": acc.evidence_id,
+            "proposal_id": proposal.id,
+            "proposal_version": proposal.version,
+            "proposal_sha256": proposal.document_sha256,
+            "acceptance_text_version": PROPOSAL_ACCEPTANCE_TEXT_VERSION,
+            "acceptance_text_sha256": acceptance_text_sha256,
+            "account_id": account.id,
+        },
+    )
+    db.commit()
+
+    return {
+        "ok": True,
+        "proposal_acceptance_id": acc.id,
+        "evidence_id": acc.evidence_id,
+        "access_id": acc.access_id,
+        "proposal_sha256": acc.proposal_sha256,
+    }
+
+
+@app.get("/api/proposal/render")
+def proposal_render(
+    request: Request,
+    db: Session = Depends(db_session),
+    efata_secure_session: str | None = Cookie(default=None),
+):
+    s, inv, legal_acc, term = require_authorized(db, efata_secure_session)
+    account = active_portal_account(db, inv.id)
+    proposal = current_proposal(db, inv.project_id)
+    acceptance = proposal_acceptance_for(db, proposal.id, inv.id)
+    if not acceptance:
+        raise HTTPException(403, "Aceite eletrônico da proposta obrigatório.")
+
+    data, content_type = storage.get(proposal.document_storage_key)
+    actual_sha256 = hashlib.sha256(data).hexdigest()
+    if actual_sha256 != proposal.document_sha256:
+        raise HTTPException(500, "Falha de integridade da proposta publicada.")
+
+    html_text = data.decode("utf-8")
+    watermark_text = html.escape(
+        f"CONFIDENCIAL • {acceptance.recipient_name} • "
+        f"{acceptance.organization_name} • {acceptance.access_id[:8]}"
+    )
+    watermark = (
+        "<div aria-hidden=\"true\" style=\"position:fixed;right:14px;bottom:10px;"
+        "z-index:2147483647;pointer-events:none;opacity:.32;font:700 10px system-ui;"
+        "letter-spacing:.08em;color:#6f624d;background:rgba(255,255,255,.72);"
+        "border:1px solid rgba(111,98,77,.28);padding:6px 8px;border-radius:8px\">"
+        + watermark_text
+        + "</div>"
+    )
+    if "</body>" in html_text.lower():
+        lower = html_text.lower()
+        pos = lower.rfind("</body>")
+        html_text = html_text[:pos] + watermark + html_text[pos:]
+    else:
+        html_text += watermark
+
+    log_event(
+        db,
+        request,
+        "PROPOSAL_RENDERED",
+        project_id=inv.project_id,
+        invitation_id=inv.id,
+        acceptance_id=legal_acc.id,
+        access_session_id=s.id,
+        metadata={
+            "proposal_acceptance_id": acceptance.id,
+            "proposal_id": proposal.id,
+            "proposal_version": proposal.version,
+            "proposal_sha256": actual_sha256,
+            "account_id": account.id,
+        },
+    )
+    db.commit()
+
+    return Response(
+        content=html_text.encode("utf-8"),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-store, private"},
+    )
+
+
+@app.get("/api/proposal/receipt")
+def proposal_receipt(
+    db: Session = Depends(db_session),
+    efata_secure_session: str | None = Cookie(default=None),
+):
+    s, inv, legal_acc, term = require_authorized(db, efata_secure_session)
+    proposal = current_proposal(db, inv.project_id)
+    acceptance = proposal_acceptance_for(db, proposal.id, inv.id)
+    if not acceptance or not acceptance.receipt_storage_key:
+        raise HTTPException(404, "Comprovante da proposta não encontrado.")
+    data, content_type = storage.get(acceptance.receipt_storage_key)
+    if acceptance.receipt_sha256 and hashlib.sha256(data).hexdigest() != acceptance.receipt_sha256:
+        raise HTTPException(500, "Falha de integridade do comprovante.")
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="aceite-proposta-{acceptance.id}.pdf"'
+        },
+    )
+
+
 @app.get("/api/content/presentation")
 def content(request: Request, db: Session = Depends(db_session), efata_secure_session: str | None = Cookie(default=None)):
     s, inv, acc, term = require_authorized(db, efata_secure_session)
@@ -1022,6 +1334,99 @@ async def create_invitation(payload: CreateInvitationRequest, request: Request, 
     await send_email(inv.recipient_email, "Convite — Estevez Guarda", f"<p>Você recebeu acesso individual ao briefing confidencial do Projeto Estevez.</p><p><a href='{html.escape(link)}'>Acessar portal</a></p><p>Não encaminhe este link.</p>")
     return {"id":inv.id,"link":link,"expires_at":inv.expires_at}
 
+
+
+@app.post("/api/admin/proposal")
+def admin_publish_proposal(
+    payload: ProposalPublishRequest,
+    request: Request,
+    db: Session = Depends(db_session),
+    efata_admin_session: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None),
+):
+    verify_admin_csrf(request, x_csrf_token)
+    admin_session = admin_auth(db, efata_admin_session)
+
+    project = db.scalar(select(Project).where(Project.slug == "estevez-guarda"))
+    if not project:
+        raise HTTPException(503, "Projeto Estevez Guarda não encontrado.")
+
+    html_text = payload.html.strip()
+    prefix = html_text[:600].lower()
+    if "<html" not in prefix and "<!doctype html" not in prefix:
+        raise HTTPException(400, "O arquivo enviado não parece ser um HTML completo.")
+
+    duplicate = db.scalar(
+        select(ProposalDocument).where(
+            ProposalDocument.project_id == project.id,
+            ProposalDocument.version == payload.version,
+        )
+    )
+    if duplicate:
+        raise HTTPException(
+            409,
+            "Esta versão da proposta já foi publicada. Use uma nova versão para preservar a trilha de auditoria.",
+        )
+
+    data = html_text.encode("utf-8")
+    digest = hashlib.sha256(data).hexdigest()
+    safe_version = "".join(
+        ch if ch.isalnum() or ch in "._-" else "-"
+        for ch in payload.version
+    ).strip("-") or "proposal"
+    storage_key = (
+        f"projects/estevez-guarda/proposals/"
+        f"{safe_version}-{digest[:12]}.html"
+    )
+    storage.put(storage_key, data, "text/html; charset=utf-8")
+
+    published_at = now()
+    active = db.scalars(
+        select(ProposalDocument).where(
+            ProposalDocument.project_id == project.id,
+            ProposalDocument.superseded_at.is_(None),
+        )
+    ).all()
+    for old in active:
+        old.superseded_at = published_at
+
+    proposal = ProposalDocument(
+        project_id=project.id,
+        title=payload.title.strip(),
+        version=payload.version.strip(),
+        document_sha256=digest,
+        document_storage_key=storage_key,
+        published_at=published_at,
+        published_by=admin_session.admin_email,
+    )
+    db.add(proposal)
+    db.flush()
+
+    log_event(
+        db,
+        request,
+        "PROPOSAL_PUBLISHED",
+        project_id=project.id,
+        metadata={
+            "proposal_id": proposal.id,
+            "proposal_title": proposal.title,
+            "proposal_version": proposal.version,
+            "proposal_sha256": digest,
+            "storage_key": storage_key,
+            "published_by": admin_session.admin_email,
+        },
+    )
+    db.commit()
+
+    return {
+        "ok": True,
+        "id": proposal.id,
+        "title": proposal.title,
+        "version": proposal.version,
+        "sha256": proposal.document_sha256,
+        "published_at": proposal.published_at,
+    }
+
 @app.get("/api/admin/overview")
 def admin_overview(db: Session = Depends(db_session), efata_admin_session: str | None = Cookie(default=None)):
     admin_auth(db, efata_admin_session)
@@ -1029,10 +1434,52 @@ def admin_overview(db: Session = Depends(db_session), efata_admin_session: str |
     acceptances = db.scalars(select(LegalAcceptance).order_by(desc(LegalAcceptance.accepted_at)).limit(100)).all()
     events = db.scalars(select(AuditEvent).order_by(desc(AuditEvent.created_at)).limit(250)).all()
     access_requests = db.scalars(select(AccessRequest).order_by(desc(AccessRequest.requested_at)).limit(100)).all()
+    project = db.scalar(select(Project).where(Project.slug == "estevez-guarda"))
+    proposal = None
+    proposal_acceptances = []
+    if project:
+        proposal = db.scalar(
+            select(ProposalDocument)
+            .where(
+                ProposalDocument.project_id == project.id,
+                ProposalDocument.superseded_at.is_(None),
+            )
+            .order_by(desc(ProposalDocument.published_at))
+        )
+        proposal_acceptances = db.scalars(
+            select(ProposalAcceptance)
+            .where(ProposalAcceptance.project_id == project.id)
+            .order_by(desc(ProposalAcceptance.accepted_at))
+            .limit(100)
+        ).all()
     return {
         "invitations":[{"id":x.id,"email":x.recipient_email,"name":x.recipient_name,"organization":x.organization_name,"expires_at":x.expires_at,"revoked_at":x.revoked_at} for x in invitations],
         "acceptances":[{"id":x.id,"name":x.recipient_name,"email":x.recipient_email,"organization":x.organization_name,"term_version":x.term_version,"accepted_at":x.accepted_at,"access_id":x.access_id} for x in acceptances],
         "access_requests":[{"id":x.id,"full_name":x.full_name,"email":x.email,"organization":x.organization_name,"role":x.recipient_role,"purpose":x.purpose,"state":x.state,"requested_at":x.requested_at,"reviewed_at":x.reviewed_at,"reviewed_by":x.reviewed_by} for x in access_requests],
+        "proposal": (
+            {
+                "id": proposal.id,
+                "title": proposal.title,
+                "version": proposal.version,
+                "sha256": proposal.document_sha256,
+                "published_at": proposal.published_at,
+                "published_by": proposal.published_by,
+            }
+            if proposal else None
+        ),
+        "proposal_acceptances":[
+            {
+                "id":x.id,
+                "evidence_id":x.evidence_id,
+                "name":x.recipient_name,
+                "email":x.recipient_email,
+                "organization":x.organization_name,
+                "proposal_version":x.proposal_version,
+                "accepted_at":x.accepted_at,
+                "access_id":x.access_id,
+            }
+            for x in proposal_acceptances
+        ],
         "push_enabled": push_available(),
         "events":[{"event_type":x.event_type,"created_at":x.created_at,"invitation_id":x.invitation_id,"acceptance_id":x.acceptance_id,"access_session_id":x.access_session_id,"request_id":x.request_id,"ip_address":x.ip_address,"user_agent":x.user_agent,"metadata":json.loads(x.metadata_json or "{}")} for x in events],
     }
