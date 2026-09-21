@@ -735,31 +735,10 @@ def content(request: Request, db: Session = Depends(db_session), efata_secure_se
     key = key_prefix + "2026-09-18.mvp1.json"
     data, _ = storage.get(key)
     payload = json.loads(data)
-
-    # Runtime operational state is authoritative for the assistant status.
-    # The persisted presentation JSON is editorial/versioned content and may
-    # contain historical status text, so reconcile it before returning.
-    agent_enabled = bool(settings.agent_enabled)
     payload["viewer"] = {
         "name":acc.recipient_name, "organization":acc.organization_name, "access_id":acc.access_id,
-        "agent_enabled":agent_enabled,
+        "agent_enabled":settings.agent_enabled,
     }
-    for section in payload.get("sections", []):
-        if section.get("type") != "status":
-            continue
-        for card in section.get("cards", []):
-            if card.get("label") != "ASSISTENTE ESTEVEZ":
-                continue
-            if agent_enabled:
-                card["value"] = "ATIVO"
-                card["tone"] = "good"
-                card["text"] = "O Assistente Estevez está habilitado neste ambiente."
-            else:
-                card["value"] = "CONFIGURAR IA"
-                card["tone"] = "warn"
-                card["text"] = "O Assistente Estevez ainda não está habilitado neste ambiente."
-            break
-
     log_event(db, request, "CONTENT_ACCESSED", project_id=inv.project_id, invitation_id=inv.id, acceptance_id=acc.id, access_session_id=s.id,
               metadata={"content":"presentation","version":payload["version"]})
     db.commit()
